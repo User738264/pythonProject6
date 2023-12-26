@@ -99,6 +99,22 @@ async def mailing_for_real(message: Message, state: FSMContext) -> None:
     a.close()
     for i in users_to_mail:
         try:
-            await bot.send_message(i[0], message.text)
+            # await bot.send_message(i[0], message.text)
+            if message.text:
+                await bot.send_message(i[0], message.text)
+            elif message.photo is not None:
+                await bot.send_photo(i[0], photo=message.photo[-1].file_id,
+                                     caption=message.caption)
+            elif message.document is not None:
+                await bot.send_document(i[0], document=message.document.file_id,
+                                        caption=message.caption)
+            elif message.sticker is not None:
+                await bot.send_sticker(i[0], sticker=message.sticker.file_id)
+            elif message.video is not None:
+                await bot.send_video(i[0], video=message.video.file_id,
+                                     caption=message.caption)
+            elif message.audio is not None:
+                await bot.send_audio(i[0], audio=message.audio.file_id,
+                                     caption=message.caption)
         except:
             pass
