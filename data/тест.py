@@ -7,7 +7,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/classroom.courses.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/classroom.courses",
+          'https://www.googleapis.com/auth/classroom.coursework.students']
 
 
 def main():
@@ -40,7 +41,6 @@ def main():
     results = service.courses().list(pageSize=10).execute()
     print(results)
     courses = results.get("courses", [])
-
     if not courses:
       print("No courses found.")
       return
@@ -48,9 +48,14 @@ def main():
     print("Courses:")
     for course in courses:
       print(course["name"])
+    service = build("classroom", "v1", credentials=creds)
+
+    stud = service.courses().students().list(courseId='650449224053').execute()
+    print(stud)
 
   except HttpError as error:
     print(f"An error occurred: {error}")
+
 
 
 if __name__ == "__main__":

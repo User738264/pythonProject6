@@ -51,6 +51,7 @@ bot.session.middleware(RequestLogging(ignore_methods=[GetUpdates]))
 dp.include_router(routers.form_router)
 dp.include_router(users_mailing.admin_router)
 
+
 async def main():
     # Запускаем бота в полинге
     await dp.start_polling(bot, skip_updates=True)

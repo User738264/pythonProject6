@@ -68,6 +68,7 @@ class Form(StatesGroup):
     waiting_answer = State()
     waiting_task = State()
     waiting_mail = State()
+    gpt_wait = State()
 
 
 @form_router.message(CommandStart())
@@ -97,8 +98,8 @@ async def waiting_for_group_id(message: Message, state: FSMContext) -> None:
         chat_ids_and_their_links[str(message.from_user.id)] = tg_link
         u = sqlite3.connect('users.db')
         cursor = u.cursor()
-        cursor.execute('INSERT INTO System (user, link, qwerty) VALUES (?, ?, ?)',
-                       (str(message.from_user.id), tg_link, message.text))
+        cursor.execute('INSERT INTO System (user, link, qwerty, tokens) VALUES (?, ?, ?, ?)',
+                       (str(message.from_user.id), tg_link, message.text, 0,))
         u.commit()
         u.close()
         values_list = rating_sheet.col_values(1)
@@ -116,6 +117,7 @@ async def process_button(query: types.CallbackQuery):
     try:
         await bot.delete_message(query.from_user.id, query.message.message_id)
         await bot.send_message(query.from_user.id, 'Ваше сообщение отправлено!')
+        print('error1')
         values = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
             range='тест' + "!A1",
@@ -125,9 +127,11 @@ async def process_button(query: types.CallbackQuery):
                     [date, time, questions_text, questions_id, user_id, user_name, user_link, '---', '---'],  # строка
                 ]
             }).execute()
+        print('error2', query.from_user.id)
         await bot_sending_problems_to_another_chat(query.from_user.id)
+        print('error3')
     except:
-        pass
+        print('error')
 
 
 @form_router.callback_query(lambda query: query.data == 'NO')
@@ -149,8 +153,9 @@ async def NO_button(query: types.CallbackQuery):
 async def bot_sending_problems_to_another_chat(user_who_send_problem):
     global flag
     builder = InlineKeyboardBuilder()
-    builder.add(types.InlineKeyboardButton(text='Ответить', callback_data=user_who_send_problem))
+    builder.add(types.InlineKeyboardButton(text='Ответить', callback_data=str(user_who_send_problem)))
     group_id = chat_ids_and_their_links[str(user_who_send_problem)][1]
+
     for id, link in chat_ids_and_their_links.items():
         # if False:
         if id == str(user_who_send_problem) or group_id != link[1]:
@@ -314,27 +319,58 @@ async def generate_exercise(message: Message):
         reply_markup=builder.as_markup()
     )
 
+anti_recurcion = 0
+
+
+@form_router.message(Command("help_from_gpt"))
+async def ai_cons(message: Message, state: FSMContext) -> None:
+    await state.set_state(Form.gpt_wait)
+    await bot.send_message(message.from_user.id, 'Теперь вы общаетесь с gpt!\nДля прекращения общения используйте комманду /stop_gpt')
+
+
+@form_router.message(Form.gpt_wait)
+async def ai_cons(message: Message, state: FSMContext) -> None:
+    await ai_generate_exercise(message.text, message)
+
+
+@form_router.message(Command("stop_gpt"))
+async def ai_cons(message: Message, state: FSMContext) -> None:
+    await bot.send_message(message.from_user.id, 'Вы больше не общаетесь с gpt')
+    await state.clear()
+
 
 async def ai_generate_exercise(prompt, message):
     input_usr_message = prompt
-    global keys_counter
+    global keys_counter, anti_recurcion
     try:
         client = OpenAI(
             api_key=keys[keys_counter],
         )
+        con = sqlite3.connect('users.db')
+        cursor_a = con.cursor()
+        cursor_a.execute('''INSERT INTO Context (user, msg, role) VALUES (?, ?)''', (message.chat.id, input_usr_message, 'user'))
+        con.commit()
+        context = cursor_a.execute('''SELECT msg, role from Context
+                        WHERE user Like ?''', (message.chat.id,)).fetchall()
+        con.commit()
+        con.close()
+        while len(context) > 7:
+            context.pop(0)
+        context_ = []
+        for i in context:
+            if i[1] == 'user':
+                context_.append({'role': 'user', 'content': i[0]})
+            else:
+                context_.append({'role': 'system', 'content': i[0]})
         chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": 'Будь помощником!'},
-                {
-                    "role": "user",
-                    "content": input_usr_message,
-                }
-            ],
+            messages=context_,
             model="gpt-3.5-turbo",
+            max_tokens=2048
         )
         bot_reply = chat_completion.choices[0].message.content
+        cursor_a.execute('''INSERT INTO Context (user, msg, role) VALUES (?, ?)''',
+                         (message.chat.id, bot_reply, 'system'))
+        con.commit()
         if prompt[:62] == 'Сгенерируй задачу по програмированию на языке Python по теме: ':
             a = sqlite3.connect('users.db')
             cur = a.cursor()
@@ -344,13 +380,25 @@ async def ai_generate_exercise(prompt, message):
                         (message.chat.id, prompt[62:], bot_reply, indeficator))
             a.commit()
             a.close()
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        num_tokens = len(encoding.encode(bot_reply))
+        tok = cursor_a.execute('''SELECT tokens from System
+                                WHERE user Like ?''', (message.chat.id,)).fetchall()
+        cursor_a.execute('''UPDATE System SET tokens = ? 
+                        WHERE user LIKE ?''', (tok[0][0] + num_tokens, message.chat.id,))
+        con.commit()
         await message.reply(bot_reply, parse_mode=ParseMode.MARKDOWN)
+        anti_recurcion = 0
     except:
-        print(keys[keys_counter])
-        keys_counter += 1
-        if keys_counter > len(keys):
-            keys_counter = 0
-        await ai_generate_exercise(prompt, message)
+        anti_recurcion += 1
+        if anti_recurcion < 30:
+            keys_counter += 1
+            if keys_counter >= len(keys):
+                keys_counter = 0
+            await ai_generate_exercise(prompt, message)
+            return
+        await message.reply('Произошла ошибка!', parse_mode=ParseMode.MARKDOWN)
+        return
 
 
 @form_router.callback_query(lambda callback_query: callback_query.data in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'i', 'j'])

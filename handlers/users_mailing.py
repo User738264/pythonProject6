@@ -29,6 +29,7 @@ from data.sheet import rating_sheet, service, gc, ws, spreadsheet_id
 from handlers.functions import get_key, some_dict, date, time, questions_text, questions_id, user_id, user_name, \
     user_link, user_who_answer, answer_rating, get_indeficator, exercise_dict
 from handlers.routers import Form
+
 admin_router = Router()
 bot = Bot(token=os.getenv('TOKEN'), parse_mode=ParseMode.HTML)
 ikb_menu = InlineKeyboardMarkup(row_width=1,
@@ -63,11 +64,13 @@ async def registration_group(message: Message):
     admins_and_their_groups = a.execute('''SELECT id, qwerty FROM Admins''').fetchall()
     groups = a.execute('''SELECT qwerty FROM Admins''').fetchall()
     groups = [i[0] for i in groups]
-    for i in admins_and_their_groups:
-        if str(message.from_user.username) in i:
+    print(groups, admins_and_their_groups)
+    for i in admins_and_their_groups[0]:
+        if str(message.from_user.username) in str(i):
             while 1:
                 password = symbols[randint(0, 56)] + symbols[randint(0, 56)] + symbols[randint(0, 56)] + symbols[
                     randint(0, 56)]
+
                 if password not in groups:
                     break
             await bot.send_message(message.from_user.id,
@@ -81,10 +84,8 @@ async def mailing(message: Message, state: FSMContext) -> None:
     admins = sqlite3.connect('data/admins.db')
     a = admins.cursor()
     admins_and_their_groups = a.execute('''SELECT id, qwerty FROM Admins''').fetchall()
-    print(1)
-    print(admins_and_their_groups)
     admins = [i[0] for i in admins_and_their_groups]
-    if message.from_user.username in admins:
+    if str(message.from_user.id) in admins:
         await state.set_state(Form.waiting_mail)
         await bot.send_message(message.from_user.id, 'Введите текст сообщения.')
 
@@ -99,7 +100,6 @@ async def mailing_for_real(message: Message, state: FSMContext) -> None:
     a.close()
     for i in users_to_mail:
         try:
-            # await bot.send_message(i[0], message.text)
             if message.text:
                 await bot.send_message(i[0], message.text)
             elif message.photo is not None:
