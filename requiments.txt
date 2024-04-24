@@ -1,0 +1,13 @@
+OpenAI
+aiogram
+sqlite3
+tiktoken
+os
+secrets
+string
+typing
+dotenv
+gspread
+httplib2
+oauth2client
+apiclient
